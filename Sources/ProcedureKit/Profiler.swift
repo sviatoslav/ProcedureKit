@@ -4,7 +4,6 @@
 //  Copyright © 2016 ProcedureKit. All rights reserved.
 //
 
-
 import Foundation
 
 public enum ProcedureEvent: Int {
@@ -146,8 +145,8 @@ public final class ProcedureProfiler: Identifiable, Equatable {
                 default:
                     break
             }
+            strongSelf.finish()
         }
-        finish()
     }
 
     func addChild(operation: Operation, now: TimeInterval = CFAbsoluteTimeGetCurrent() as TimeInterval) {
@@ -187,8 +186,8 @@ extension ProcedureProfiler: ProcedureProfilerReporter {
                 strongSelf.result = strongSelf.result.add(child: result)
                 strongSelf.children.remove(at: index)
             }
+            strongSelf.finish()
         }
-        finish()
     }
 }
 
@@ -201,7 +200,7 @@ extension ProcedureProfiler: ProcedureObserver {
         addMetric(forEvent: .attached)
     }
 
-    public func will(execute procedure: Procedure) {
+    public func will(execute procedure: Procedure, pendingExecute: PendingExecuteEvent) {
         addMetric(forEvent: .started)
     }
 

@@ -10,6 +10,13 @@ import Dispatch
 /**
  An observer which will automatically cancel (with an error)
  if it doesn't finish before a time interval is expired.
+
+ IMPORTANT:
+ This will cancel a Procedure. It is the responsibility
+ of the Procedure subclass to handle cancellation as
+ appropriate for it to rapidly finish after it is cancelled.
+
+ See the documentation for `Procedure.cancel()`.
  */
 public struct TimeoutObserver: ProcedureObserver {
 
@@ -33,7 +40,7 @@ public struct TimeoutObserver: ProcedureObserver {
         delay = .until(date)
     }
 
-    public func will(execute procedure: Procedure) {
+    public func will(execute procedure: Procedure, pendingExecute: PendingExecuteEvent) {
         switch delay.interval {
         case (let interval) where interval > 0.0:
             ProcedureTimeoutRegistrar.shared.createFinishTimeout(forProcedure: procedure, withDelay: delay)

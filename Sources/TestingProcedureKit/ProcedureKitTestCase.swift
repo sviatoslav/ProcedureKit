@@ -11,7 +11,7 @@ import ProcedureKit
 open class ProcedureKitTestCase: XCTestCase {
 
     public var queue: ProcedureQueue!
-    public var delegate: QueueTestDelegate!
+    public var delegate: QueueTestDelegate! // swiftlint:disable:this weak_delegate
     open var procedure: TestProcedure!
 
     open override func setUp() {
@@ -23,8 +23,13 @@ open class ProcedureKitTestCase: XCTestCase {
     }
 
     open override func tearDown() {
-        procedure.cancel()
-        queue.cancelAllOperations()
+        if let procedure = procedure {
+            procedure.cancel()
+        }
+        if let queue = queue {
+            queue.cancelAllOperations()
+            queue.waitUntilAllOperationsAreFinished()
+        }
         delegate = nil
         queue = nil
         procedure = nil
@@ -124,6 +129,7 @@ open class ProcedureKitTestCase: XCTestCase {
         procedure.addWillAddOperationBlockObserver { _, operation in
             finishing.add(dependency: operation)
         }
+        finishing.name = "FinishingBlockProcedure(for: \(procedure.operationName))"
         return finishing
     }
 }
@@ -132,7 +138,7 @@ public extension ProcedureKitTestCase {
 
     func createCancellingProcedure() -> TestProcedure {
         let procedure = TestProcedure(name: "Cancelling Test Procedure")
-        procedure.addWillExecuteBlockObserver { procedure in
+        procedure.addWillExecuteBlockObserver { procedure, _ in
             procedure.cancel()
         }
         return procedure

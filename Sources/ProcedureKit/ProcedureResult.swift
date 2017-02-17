@@ -4,7 +4,6 @@
 //  Copyright © 2016 ProcedureKit. All rights reserved.
 //
 
-
 public enum Pending<T> {
 
     case pending
@@ -112,7 +111,6 @@ public protocol OutputProcedure: ProcedureProtocol {
     var output: Pending<ProcedureResult<Output>> { get set }
 }
 
-
 public let pendingVoid: Pending<Void> = .ready(())
 public let success: ProcedureResult<Void> = .success(())
 public let pendingVoidResult: Pending<ProcedureResult<Void>> = .ready(success)
@@ -137,19 +135,23 @@ public extension ProcedureProtocol {
      - parameters dep: any `Operation` subclass.
      - parameters block: a closure which receives `self`, the dependent
      operation, and an array of `ErrorType`, and returns Void.
+     (The closure is automatically dispatched on the EventQueue
+     of the receiver, if the receiver is a Procedure or supports the
+     QueueProvider protocol).
      - returns: `self` - so that injections can be chained together.
      */
     @discardableResult func inject<Dependency: ProcedureProtocol>(dependency: Dependency, block: @escaping (Self, Dependency, [Error]) -> Void) -> Self {
+        precondition(dependency !== self, "Cannot inject result of self into self.")
 
-        dependency.addWillFinishBlockObserver { [weak self] dependency, errors in
+        dependency.addWillFinishBlockObserver(synchronizedWith: (self as? QueueProvider)) { [weak self] dependency, errors, _ in
             if let strongSelf = self {
                 block(strongSelf, dependency, errors)
             }
         }
 
-        dependency.addDidCancelBlockObserver { [weak self] dependency, errors in
+        dependency.addDidCancelBlockObserver { [weak self] _, errors in
             if let strongSelf = self {
-                strongSelf.cancel(withError: ProcedureKitError.parent(cancelledWithErrors: errors))
+                strongSelf.cancel(withError: ProcedureKitError.dependency(cancelledWithErrors: errors))
             }
         }
 

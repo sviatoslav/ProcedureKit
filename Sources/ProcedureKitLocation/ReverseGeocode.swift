@@ -38,12 +38,10 @@ open class ReverseGeocodeProcedure: Procedure, InputProcedure, OutputProcedure {
         super.init()
         add(condition: MutuallyExclusive<ReverseGeocodeProcedure>())
         add(observer: TimeoutObserver(by: timeout))
-        addDidCancelBlockObserver { [weak self] _, errors in
+        addDidCancelBlockObserver { [weak self] _, _ in
             DispatchQueue.main.async {
                 self?.cancelGeocoder()
-                if self?.isExecuting ?? false {
-                    self?.finish()
-                }
+                self?.finish()
             }
         }
     }

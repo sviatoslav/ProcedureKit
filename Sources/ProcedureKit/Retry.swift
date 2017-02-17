@@ -7,7 +7,7 @@
 import Foundation
 import Dispatch
 
-public struct RetryFailureInfo<T: Operation> {
+public struct RetryFailureInfo<T: Procedure> {
 
     /// - returns: the failed operation
     public let operation: T
@@ -52,14 +52,13 @@ public extension RetryFailureInfo {
     }
 }
 
-
-internal class RetryIterator<T: Operation>: IteratorProtocol {
+internal class RetryIterator<T: Procedure>: IteratorProtocol {
     typealias Payload = RepeatProcedure<T>.Payload
     typealias Handler = RetryProcedure<T>.Handler
     typealias FailureInfo = RetryProcedure<T>.FailureInfo
 
     internal let handler: Handler
-    internal var info: FailureInfo? = nil
+    internal var info: FailureInfo?
     private var iterator: AnyIterator<Payload>
 
     init<PayloadIterator: IteratorProtocol>(handler: @escaping Handler, iterator base: PayloadIterator) where PayloadIterator.Element == Payload {
@@ -75,10 +74,10 @@ internal class RetryIterator<T: Operation>: IteratorProtocol {
 }
 
 /**
- RetryProcedure is a subclass of RepeatProcedure. Like RepeatProcedure
- it is generic over T, an Operation subclass. It can be used to
- automatically retry another instance of operation T if the first
- instance finishes with errors.
+ RetryProcedure is a RepeatProcedure subclass which can be used
+ to automatically retry another instance of procedure T if the
+ first instance finishes with errors. It is generic over T, a
+ `Procedure` subclass.
 
  To support effective error recovery, in addition to a (T, Delay?)
  iterator, RetryProcedure is initialized with a block. This block
@@ -90,7 +89,7 @@ internal class RetryIterator<T: Operation>: IteratorProtocol {
 
  To exit with the error, this block can return nil.
  */
-open class RetryProcedure<T: Operation>: RepeatProcedure<T> {
+open class RetryProcedure<T: Procedure>: RepeatProcedure<T> {
     public typealias Handler = (FailureInfo, Payload) -> Payload?
     public typealias FailureInfo = RetryFailureInfo<T>
 
@@ -115,10 +114,11 @@ open class RetryProcedure<T: Operation>: RepeatProcedure<T> {
 
     open override func childWillFinishWithoutErrors(_ child: Operation) {
         // no-op
-        // To ensure that we do not retry/repeat successful operations
+        // To ensure that we do not retry/repeat successful procedures
     }
 
     open override func child(_ child: Operation, willAttemptRecoveryFromErrors errors: [Error]) -> Bool {
+        eventQueue.debugAssertIsOnQueue()
         guard child === current else { return false }
         var returnValue = false
         defer {
@@ -126,23 +126,24 @@ open class RetryProcedure<T: Operation>: RepeatProcedure<T> {
             log.notice(message: "\(message) recovery from errors: \(errors) in operation: \(child)")
         }
         retry.info = createFailureInfo(for: current, errors: errors)
-        returnValue = addNextOperation()
+        returnValue = _addNextOperation()
         retry.info = .none
         return returnValue
     }
 
     open override func child(_ child: Operation, didAttemptRecoveryFromErrors errors: [Error]) {
+        eventQueue.debugAssertIsOnQueue()
         if let previous = previous, child === current {
             childDidNotRecoverFromErrors(previous)
         }
         super.child(child, didAttemptRecoveryFromErrors: errors)
     }
 
-    open override func procedureQueue(_ queue: ProcedureQueue, willFinishOperation operation: Operation, withErrors errors: [Error]) {
-        if errors.isEmpty, let previous = previous, operation === current {
+    open override func procedureQueue(_ queue: ProcedureQueue, willFinishProcedure procedure: Procedure, withErrors errors: [Error]) -> ProcedureFuture? {
+        if errors.isEmpty, let previous = previous, procedure === current {
             childDidRecoverFromErrors(previous)
         }
-        super.procedureQueue(queue, willFinishOperation: operation, withErrors: errors)
+        return super.procedureQueue(queue, willFinishProcedure: procedure, withErrors: errors)
     }
 
     internal func createFailureInfo(for operation: T, errors: [Error]) -> FailureInfo {
@@ -151,7 +152,7 @@ open class RetryProcedure<T: Operation>: RepeatProcedure<T> {
             errors: errors,
             historicalErrors: attemptedRecoveryErrors,
             count: count,
-            addOperations: add(children:),
+            addOperations: { self.add(children: $0, before: nil); return },
             log: log,
             configure: configure
         )

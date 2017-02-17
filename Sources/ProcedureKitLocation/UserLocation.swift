@@ -44,12 +44,10 @@ open class UserLocationProcedure: Procedure, OutputProcedure, CLLocationManagerD
         add(condition: AuthorizedFor(capability))
         add(condition: MutuallyExclusive<UserLocationProcedure>())
         add(observer: TimeoutObserver(by: timeout))
-        addDidCancelBlockObserver { [weak self] _, errors in
+        addDidCancelBlockObserver { [weak self] _, _ in
             DispatchQueue.main.async {
                 self?.stopLocationUpdates()
-                if self?.isExecuting ?? false {
-                    self?.finish()
-                }
+                self?.finish()
             }
         }
     }
