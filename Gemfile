@@ -1,5 +1,4 @@
-source 'https://rubygems.org'
-
-gem 'fastlane', '>= 1.41'
-gem 'scan'
-gem 'xcpretty'
+source 'https://rubygems.org' do
+	gem 'fastlane'
+	gem 'jazzy'
+end

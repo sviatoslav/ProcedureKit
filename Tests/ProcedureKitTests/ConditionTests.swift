@@ -478,8 +478,12 @@ class ConditionTests: ProcedureKitTestCase {
 
         let procedureDidFinishGroup = DispatchGroup()
         let conditionEvaluatedGroup = DispatchGroup()
+        weak var expDependencyDidStart = expectation(description: "Did Start Dependency")
         let dependency = AsyncBlockProcedure { completion in
-            // does not finish
+            DispatchQueue.main.async {
+                expDependencyDidStart?.fulfill()
+            }
+            // does not finish - the test handles that later for timing reasons
         }
         let procedure = TestProcedure()
         procedureDidFinishGroup.enter()
@@ -505,6 +509,7 @@ class ConditionTests: ProcedureKitTestCase {
         queue.add(operations: procedure, dependency)
 
         // wait until the procedure has been added to the queue
+        // and the dependency has been started
         waitForExpectations(timeout: 2)
 
         // sleep for 0.05 seconds to give a chance for the Condition to be improperly evaluated
@@ -539,8 +544,12 @@ class ConditionTests: ProcedureKitTestCase {
         let procedureDidFinishGroup = DispatchGroup()
         let conditionEvaluatedGroup = DispatchGroup()
 
+        weak var expDependencyDidStart = expectation(description: "Did Start additionalDependency")
         let dependency = TestProcedure()
         let additionalDependency = AsyncBlockProcedure { completion in
+            DispatchQueue.main.async {
+                expDependencyDidStart?.fulfill()
+            }
             // does not finish
         }
         dependency.addWillFinishBlockObserver { _, _, _ in
@@ -569,7 +578,8 @@ class ConditionTests: ProcedureKitTestCase {
 
         queue.add(operations: procedure, dependency, additionalDependency)
 
-        // wait until the first dependency has finished
+        // wait until the first dependency has finished,
+        // and the additionalDependency has started
         waitForExpectations(timeout: 2)
 
         // sleep for 0.05 seconds to give a chance for the Condition to be improperly evaluated
@@ -1101,6 +1111,54 @@ class ConditionTests: ProcedureKitTestCase {
 
         // clean-up: finish the normalDependency
         normalDependency.finish()
+    }
+
+    // MARK: - Execution Timing
+
+    func test__conditions_are_not_evaluated_while_associated_procedurequeue_is_suspended() {
+
+        queue.isSuspended = true
+
+        let conditionWasEvaluatedGroup = DispatchGroup()
+        conditionWasEvaluatedGroup.enter()
+        let testCondition = TestCondition {
+            conditionWasEvaluatedGroup.leave()
+            return .success(true)
+        }
+
+        procedure.add(condition: testCondition)
+        addCompletionBlockTo(procedure: procedure)
+        queue.add(operation: procedure)
+
+        XCTAssertTrue(conditionWasEvaluatedGroup.wait(timeout: .now() + 1.0) == .timedOut, "The condition was evaluated, despite the ProcedureQueue being suspended.")
+
+        queue.isSuspended = false
+        waitForExpectations(timeout: 3) // wait for the Procedure to finish
+        
+        XCTAssertProcedureFinishedWithoutErrors(procedure)
+        XCTAssertTrue(conditionWasEvaluatedGroup.wait(timeout: .now()) == .success, "The condition was never evaluated.")
+    }
+
+    func test__conditions_on_added_children_are_not_evaluated_before_parent_group_executes() {
+
+        let conditionWasEvaluatedGroup = DispatchGroup()
+        conditionWasEvaluatedGroup.enter()
+        let testCondition = TestCondition {
+            conditionWasEvaluatedGroup.leave()
+            return .success(true)
+        }
+
+        procedure.add(condition: testCondition)
+        let group = GroupProcedure(operations: [])
+        group.add(child: procedure) // deliberately use add(child:) to test the non-initializer path
+
+        XCTAssertTrue(conditionWasEvaluatedGroup.wait(timeout: .now() + 1.0) == .timedOut, "The condition was evaluated, despite the ProcedureQueue being suspended.")
+
+        wait(for: group)
+
+        XCTAssertProcedureFinishedWithoutErrors(group)
+        XCTAssertProcedureFinishedWithoutErrors(procedure)
+        XCTAssertTrue(conditionWasEvaluatedGroup.wait(timeout: .now()) == .success, "The condition was never evaluated.")
     }
 }
 
